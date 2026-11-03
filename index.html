@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task Manager</title>
+<style>
+  :root {
+    --bg: #eef1f6; --surface: #ffffff; --ink: #1b2433; --muted: #6b7587;
+    --line: #d9dfe9; --accent: #2f5bea; --accent-ink: #ffffff; --danger: #c23b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161f; --surface: #1b212d; --ink: #e8ecf4; --muted: #94a0b5;
+      --line: #2b3342; --accent: #6b8cff; --accent-ink: #0d1220; --danger: #ff7b7b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { font-size: 2rem; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  form { display: flex; gap: 8px; margin-bottom: 16px; }
+  input[type="text"], input[type="date"] {
+    font: inherit; color: inherit; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+  }
+  input[type="text"] { flex: 1; min-width: 0; }
+  button {
+    font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink); padding: 10px 14px;
+  }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .filters { display: flex; gap: 4px; }
+  .filters button { padding: 6px 12px; }
+  .filters button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .count { color: var(--muted); font-size: 0.9rem; }
+  ul { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  li { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  li:last-child { border-bottom: 0; }
+  li input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
+  .text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .due { display: block; font-size: 0.85rem; color: var(--muted); }
+  .due.late { color: var(--danger); font-weight: 600; }
+  li.done .title { text-decoration: line-through; color: var(--muted); }
+  li button { padding: 4px 10px; color: var(--danger); }
+  .empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+  .foot { margin-top: 12px; text-align: right; }
+  @media (max-width: 480px) { form { flex-wrap: wrap; } form input[type="date"] { flex: 1; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Task Manager</h1>
+  <p class="sub">Add tasks, tick them off, and keep your list in this browser.</p>
+
+  <form id="form">
+    <input type="text" id="title" placeholder="What needs to be done?" aria-label="Task title" required maxlength="120">
+    <input type="date" id="due" aria-label="Due date (optional)">
+    <button class="primary" type="submit">Add task</button>
+  </form>
+
+  <div class="bar">
+    <div class="filters" role="group" aria-label="Filter tasks">
+      <button data-filter="all" aria-pressed="true">All</button>
+      <button data-filter="active" aria-pressed="false">Active</button>
+      <button data-filter="done" aria-pressed="false">Done</button>
+    </div>
+    <span class="count" id="count" aria-live="polite"></span>
+  </div>
+
+  <ul id="list"></ul>
+  <div class="foot"><button id="clear">Clear completed</button></div>
+</main>
+
+<script>
+  var KEY = "task-manager-tasks";
+  var tasks = [];
+  var filter = "all";
+
+  function load() {
+    try { tasks = JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { tasks = []; }
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(tasks)); } catch (e) {}
+  }
+
+  function render() {
+    var list = document.getElementById("list");
+    list.innerHTML = "";
+    var today = new Date().toISOString().slice(0, 10);
+    var shown = tasks.filter(function (t) {
+      return filter === "all" || (filter === "done" ? t.done : !t.done);
+    });
+
+    if (!shown.length) {
+      var empty = document.createElement("li");
+      empty.className = "empty";
+      empty.textContent = tasks.length ? "No tasks in this view." : "No tasks yet. Add your first task above.";
+      list.appendChild(empty);
+    }
+
+    shown.forEach(function (t) {
+      var li = document.createElement("li");
+      if (t.done) li.className = "done";
+
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = t.done;
+      cb.setAttribute("aria-label", "Mark “" + t.title + "” as done");
+      cb.onchange = function () { t.done = cb.checked; save(); render(); };
+
+      var text = document.createElement("div");
+      text.className = "text";
+      var title = document.createElement("span");
+      title.className = "title";
+      title.textContent = t.title;
+      text.appendChild(title);
+      if (t.due) {
+        var due = document.createElement("span");
+        due.className = "due" + (!t.done && t.due < today ? " late" : "");
+        due.textContent = "Due " + t.due + (!t.done && t.due < today ? " (overdue)" : "");
+        text.appendChild(due);
+      }
+
+      var del = document.createElement("button");
+      del.textContent = "Delete";
+      del.setAttribute("aria-label", "Delete “" + t.title + "”");
+      del.onclick = function () {
+        tasks = tasks.filter(function (x) { return x.id !== t.id; });
+        save(); render();
+      };
+
+      li.appendChild(cb); li.appendChild(text); li.appendChild(del);
+      list.appendChild(li);
+    });
+
+    var left = tasks.filter(function (t) { return !t.done; }).length;
+    document.getElementById("count").textContent = left + (left === 1 ? " task left" : " tasks left");
+    document.getElementById("clear").hidden = !tasks.some(function (t) { return t.done; });
+  }
+
+  document.getElementById("form").onsubmit = function (e) {
+    e.preventDefault();
+    var title = document.getElementById("title");
+    var due = document.getElementById("due");
+    var value = title.value.trim();
+    if (!value) return;
+    tasks.push({ id: Date.now(), title: value, due: due.value, done: false });
+    title.value = ""; due.value = "";
+    save(); render(); title.focus();
+  };
+
+  document.getElementById("clear").onclick = function () {
+    tasks = tasks.filter(function (t) { return !t.done; });
+    save(); render();
+  };
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-filter]"), function (b) {
+    b.onclick = function () {
+      filter = b.getAttribute("data-filter");
+      Array.prototype.forEach.call(document.querySelectorAll("[data-filter]"), function (x) {
+        x.setAttribute("aria-pressed", x === b ? "true" : "false");
+      });
+      render();
+    };
+  });
+
+  load(); render();
+</script>
+</body>
+</html>
